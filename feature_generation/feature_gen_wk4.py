@@ -64,6 +64,7 @@ class feature_gen:
             ## --------------------------------------------- NEW --------------------------------------------- ##
 
             entropy=('rating', lambda x: entropy(x.value_counts(normalize=True))),
+            IQR=('rating', lambda x: x.quantile(0.75) - x.quantile(0.25)),
             item_mean=('item', 'mean'),
             item_variance=('item', 'var'),
             skewness=('item', skew),
@@ -324,16 +325,13 @@ class feature_gen:
         XX = XX.drop(['user'],axis=1)
         XX = XX.groupby(by='item').aggregate('mean')
 
-        # Retrieve user ID's
-        users = df_base['user'].unique()
-
         # Initialize empty list
         users_mean_diff = []
         # Retrieve items rated by users and convert to dictionary
         user_items = df_base.groupby('user')['item'].agg(list).to_dict()
 
         # Iterate through all users
-        for i in users:
+        for i in df_base['user'].unique():
             # Retrieve items that the user rated (interacted with)
             items = user_items[i]
             # Set mean_ID_iff to 0
@@ -357,11 +355,69 @@ class feature_gen:
         users_mean_diff = pd.DataFrame(users_mean_diff)
         users_mean_diff = users_mean_diff.sort_values(by='user').reset_index(drop=True)
 
+        f = lambda row: -1 if row < -0.5 else 0
+        # Calculate rating mode
+        XX['mode'] = XX['rating'].apply(lambda row: 1 if row > 0.5 else f(row))
+
+        users_item_ratings = df_base.groupby('user').agg(list)
+
+        # Intialize a list for user ratings data
+        users_ratings_data = []
+
+        # Loop through users and generate dictionary of data for each user
+        for user in users_item_ratings.index:
+            
+            # Retrieve user items and their respective ratings
+            items = users_item_ratings.loc[user]['item']
+            ratings = users_item_ratings.loc[user]['rating']
+
+            # Create a dictionary with placeholder values for user 
+            user_ratings_data = {'user':user,'modal_ratings':0,'non_modal_ratings':0,'rating_diff':[]}
+
+            # Get modal ratings for items
+            items_mode = np.array(XX['mode'][items])
+            
+            # Compare user ratings to modal ratings and sum
+            user_ratings_data['modal_ratings'] = np.sum(ratings == items_mode)
+            # Calculate the distance of user rating to modal rating for each item
+            user_ratings_data['rating_diff'] = abs(items_mode - ratings)
+
+            # Calculate amount of users' non-modal ratings and append dict to list
+            user_ratings_data['non_modal_ratings'] = len(user_ratings_data['rating_diff']) - user_ratings_data['modal_ratings']
+            users_ratings_data.append(user_ratings_data)
+
+        # Convert list to dataframe and sort by user
+        new_features = pd.DataFrame(users_ratings_data).sort_values(by='user').reset_index(drop=True)
+        # Calculate the standard deviation and mean of rating difference
+        new_features['diff_std'] = new_features['rating_diff'].apply(lambda row: np.std(row))
+        new_features['diff_mean'] = new_features['rating_diff'].apply(lambda row: np.mean(row))
+
+        # Initialize list for modal : non-modal ratios
+        mode_ratings_ratio = []
+
+        # Iterate through user ratings data and calculate ratio
+        for index,row in new_features.iterrows():
+
+            # Retrieve modal and non-modal ratings for user
+            x = row['modal_ratings']
+            y = row['non_modal_ratings']
+
+            # Calculate modal/non-modal ratio
+            ratio = x/y
+            # Add ratio to list
+            mode_ratings_ratio.append(ratio)
+
+        # Add ratios to dataframe
+        new_features['mode_ratings_ratio'] = mode_ratings_ratio
+        new_features = new_features.sort_values(by='user').reset_index(drop=True)
+
+        # Join user ratings data with mean ID diff
+        new_features = new_features.join(users_mean_diff['mean_ID_diff'])
         # Drop user ID (no longer necessary)
-        users_mean_diff = users_mean_diff.drop(['user'],axis=1)
+        new_features = new_features.drop(['user','rating_diff'],axis=1)
 
         # Merge data features with item features
-        df = df.merge(users_mean_diff, left_index=True, right_index=True)
+        df = df.merge(new_features, left_index=True, right_index=True)
 
         # Return merged data features with item features
         return df
