@@ -202,7 +202,7 @@ class feature_gen:
     def generateSparseMatrix(self, df_base: pd.DataFrame, df: pd.DataFrame) -> pd.DataFrame:
 
         # Create a template sparse matrix
-        sm = pd.DataFrame(0, index=range(len(set(df_base['user']))), columns=range(df_base['item'].max()+1))
+        sm = pd.DataFrame(0, index=range(len(set(df_base['user']))), columns=range(1000))
         sm.index = list(set(df_base.user))
         sm.sort_index()
 
