@@ -6,11 +6,13 @@ class feature_gen:
     # Retrieve data from path and create data features
     def retrieveAndGenerate(self, path: str) -> pd.DataFrame:
         # Retrieve data from file path
-        df, yy = self.extractDataFromNPZ(path)
+        XX, yy = self.extractDataFromNPZ(path)
         # Generate features from data
-        df = self.generateFeatures(df, yy)
+        df = self.generateFeatures(XX.copy(deep=True), yy)
         # Generate new features for week 2
         df = self.generateFeatures2(df)
+        # Generate sparse matrix for week 3
+        df = self.generateSparseMatrix(XX.copy(deep=True), df)
 
         # Return generated features
         return df
@@ -74,12 +76,8 @@ class feature_gen:
         df_final['followed majority'] = userItemTopRatingsCount.values()
         df_final['followed majority %'] = df_final['followed majority'] / df_final['total_interactions']
 
-        ## --------------------------------------------- NEW --------------------------------------------- ##
-
         # Average rating value for all ratings
         df_final['rating_val'] = (df_final['dislikes'] + df_final['neutral']*2 + df_final['likes']*3)/df_final['total_interactions']**2
-
-        ## ----------------------------------------------------------------------------------------------- ##
 
         # Calculate amount of no ratings provided
         df_final['no_rating'] = items_amount - df_final['total_interactions']
@@ -101,7 +99,6 @@ class feature_gen:
 
         # Sort data by user value
         XX = df_base.sort_values(by=['user'], ascending=True)
-        # Group user interactions and aggregate items and ratings into lists
         XX = XX.groupby('user').agg(list)
         # Create and initialize a dictionary of user and top ratings count
         userTopRatingsCount = {}
@@ -131,9 +128,6 @@ class feature_gen:
 
         # Sort data by item value
         XX = df_base.sort_values(by=["item"], ascending=True)
-        # Drop user column and group data by item;
-        #   Aggregate the ratings by placing them into a list
-        #   Convert the dataframe into a dictionary and extract the ratings for items
         item_ratings = XX.drop(['user'],axis=1).groupby('item').agg(list).to_dict()['rating']
         # Create and initialize a dictionary of items and ratings count
         itemTopRatings = {item:{-1:0, 0:0, 1:0} for item in XX['item']}
@@ -157,9 +151,7 @@ class feature_gen:
 
         # Return itemTopRatings
         return itemTopRatings
-    
-    ## --------------------------------------------- NEW --------------------------------------------- ##
-    
+
     # Generate additional features
     def generateFeatures2(self, df: pd.DataFrame) -> pd.DataFrame:
         # Create a list of feature names
@@ -202,6 +194,38 @@ class feature_gen:
             df.loc.__setitem__((index, new_feature_names), features)
 
         # Return dataframe with new features
+        return df
+
+    ## --------------------------------------------- NEW --------------------------------------------- ##
+
+    # Generate a sparse matrix of user : item interactions
+    def generateSparseMatrix(self, df_base: pd.DataFrame, df: pd.DataFrame) -> pd.DataFrame:
+
+        # Create a template sparse matrix
+        sm = pd.DataFrame(0, index=range(len(set(df_base['user']))), columns=range(df_base['item'].max()+1))
+        sm.index = list(set(df_base.user))
+        sm.sort_index()
+
+        # Change ratings value to: 0 -> didn't rate, 1 -> dislike, 2 -> meh, 3 -> like
+        df_base["rating"] = df_base["rating"].replace(1, 3)
+        df_base["rating"] = df_base["rating"].replace(0, 2)
+        df_base["rating"] = df_base["rating"].replace(-1, 1)
+        curr_user = -1
+
+        # Group user interactions and aggregate items and ratings into lists
+        df_base = df_base.groupby('user').agg(list)
+
+        # Iterate over data and change the rating for the respective item and user
+        for user in df_base.index:
+            user_data = df_base.loc[user]
+            sm.loc.__setitem__((user, user_data['item']), user_data['rating'])
+
+        sm = sm.reset_index(drop=True)
+
+        # Merge dataframe of features with sparse matrix
+        df = sm.merge(df, left_index=True, right_index=True)
+
+        # Return merged features with sparse matrix
         return df
     
     ## ----------------------------------------------------------------------------------------------- ##

@@ -125,56 +125,6 @@ class expandDataset:
         sm.index = list(set(XX.user))
         sm.sort_index()
 
-        XX = XX.sort_values(by=["item"], ascending=True)
-        dictItem = {}
-        for i, row in XX.iterrows():
-            rating = row["rating"]
-            item = row["item"]
-
-            try:
-                keyValue = dictItem[item]
-            except KeyError:
-                keyValue = [0,0,0]
-            if(rating == 1):
-                keyValue[0] = keyValue[0] + 1
-                dictItem[item] = keyValue
-
-            elif(rating == 0):
-                keyValue[1] = keyValue[1] + 1
-                dictItem[item] = keyValue
-
-            elif(rating == -1):
-                keyValue[2] = keyValue[2] + 1
-                dictItem[item] = keyValue
-                
-        for i in dictItem:
-            itemValue = dictItem[i]
-            largestIdx = itemValue.index(max(itemValue))
-            if(largestIdx == 0):
-                dictItem[i] = 1
-            if(largestIdx == 1):
-                dictItem[i] = 0
-            if(largestIdx == 2):
-                dictItem[i] = -1
-
-        XX = XX.sort_values(by=["user"], ascending=True)
-        curr_user = -1
-        userItem = {}
-        for index, row in XX.iterrows():
-            if (row["user"] != curr_user):
-                curr_user = row["user"]
-                userItem[curr_user] = 0
-
-            mostPopRating = dictItem[row["item"]]
-
-            if(mostPopRating == row["rating"]):
-                userItem[curr_user] = userItem[curr_user] + 1
-
-        firstKey = list(userItem.keys())[0]
-
-        userItemCol = pd.DataFrame(userItem.values())
-        userItemCol.index = pd.RangeIndex(firstKey,firstKey + len(userItemCol))
-
         # Ratings will now be, 0 -> didn't rate, 1 -> dislike, 2 -> meh, 3 -> like
         XX["rating"] = XX["rating"].replace(1, 3)
         XX["rating"] = XX["rating"].replace(0, 2)
@@ -185,8 +135,6 @@ class expandDataset:
             if (row["user"] != curr_user):
                 curr_user = row["user"]
             sm.loc[int(curr_user), int(row["item"])] = row["rating"]
-
-        sm = sm.sort_index()
 
         return sm
 
@@ -309,7 +257,7 @@ class expandDataset:
         df_grouped['no_rating'] = len(df['item'].unique())-df_grouped['total_interactions']
         df_grouped["num_pop_liked"] = num_pop_liked
         df_grouped["num_unpop_liked"] = num_unpop_liked
-        df_grouped["num_pop_disliked"] = num_unpop_disliked
+        df_grouped["num_pop_disliked"] = num_pop_disliked
         df_grouped["num_unpop_disliked"] = num_unpop_disliked
 
         # Merging with labels to create a single DataFrame

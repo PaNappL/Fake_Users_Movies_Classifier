@@ -68,7 +68,7 @@ class feature_gen:
         df_final['cv'] = df_final['std']/df_final['mean'] * 100
 
         # Assign the amount of user top ratings count to "followed majority" and calculate "followed majority %"
-        df_final['followed majority'] = pd.DataFrame(userItemTopRatingsCount.values())
+        df_final['followed majority'] = userItemTopRatingsCount.values()
         df_final['followed majority %'] = df_final['followed majority'] / df_final['total_interactions']
 
         # Calculate amount of no ratings provided
@@ -84,25 +84,30 @@ class feature_gen:
     # Create a dictionary of user : top ratings count
     # Explanation:
     #       top ratings count: Amount of user ratings which are the top rating for the given items
-    def __genUserTopRatingsCount(self, df: pd.DataFrame) -> dict:
+    def __genUserTopRatingsCount(self, df_base: pd.DataFrame) -> dict:
 
         # Generate dictionary of top ratings for item
-        userItemTopRatings = self.__genItemTopRatings(df)
+        userItemTopRatings = self.__genItemTopRatings(df_base)
 
         # Sort data by user value
-        XX = df.sort_values(by=['user'], ascending=True)
+        XX = df_base.sort_values(by=['user'], ascending=True)
+        # Group user interactions and aggregate items and ratings into lists
+        XX = XX.groupby('user').agg(list)
         # Create and initialize a dictionary of user and top ratings count
-        userTopRatingsCount = {user:0 for user in XX['user']}
+        userTopRatingsCount = {}
 
         # Iterate through user ratings and increment user top ratings count by 1
-        for index, row in XX.iterrows():
-            # Retrieve the top ratings for following item
-            mostPopRating = userItemTopRatings[row['item']] 
+        for user in XX.index:
 
-            # Check if the user rating is a top rating
-            if(row['rating'] in mostPopRating):
-                # If yes, increment top ratings count by 1
-                userTopRatingsCount[row['user']] += 1
+            # Retrieve user items and their corresponding ratings
+            items = XX['item'].loc[user]
+            ratings = XX['rating'].loc[user]
+
+            # Retrieve the top ratings for following item
+            mostPopRatings = [userItemTopRatings[item] for item in items]
+
+            # Calculate amount of ratings that are the top rating
+            userTopRatingsCount[user] = np.sum([rating in mostPopRating for rating,mostPopRating in zip(ratings,mostPopRatings)])
 
         # Return userTopRatingsCount
         return userTopRatingsCount
@@ -112,19 +117,24 @@ class feature_gen:
     #       0 : [1]
     # Explanation:
     #       Item's 0 most popular rating is 1
-    def __genItemTopRatings(self, df: pd.DataFrame) -> dict:
+    def __genItemTopRatings(self, df_base: pd.DataFrame) -> dict:
 
         # Sort data by item value
-        XX = df.sort_values(by=["item"], ascending=True)
+        XX = df_base.sort_values(by=["item"], ascending=True)
+        # Drop user column and group data by item;
+        #   Aggregate the ratings by placing them into a list
+        #   Convert the dataframe into a dictionary and extract the ratings for items
+        item_ratings = XX.drop(['user'],axis=1).groupby('item').agg(list).to_dict()['rating']
         # Create and initialize a dictionary of items and ratings count
         itemTopRatings = {item:{-1:0, 0:0, 1:0} for item in XX['item']}
 
-        # Iterate through all ratings for items and increment the corresponding item : rating count by 1
-        for i, row in XX.iterrows():
-            rating = row["rating"]
-            item = row["item"]
+        # Iterate through all ratings for items and sum ratings amount by rating
+        for item in item_ratings.keys():
 
-            itemTopRatings[item][rating] += 1
+            # Sum amount of ratings for each rating
+            itemTopRatings[item][-1] = np.sum(np.array(item_ratings[item]) == -1)
+            itemTopRatings[item][0] = np.sum(np.array(item_ratings[item]) == 0)
+            itemTopRatings[item][1] = np.sum(np.array(item_ratings[item]) == 1)
 
         # Iterate through all items and assign top ratings
         for item, ratings in itemTopRatings.items():
